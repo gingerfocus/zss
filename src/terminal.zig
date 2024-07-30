@@ -119,81 +119,23 @@ pub fn restorePosition(writer: anytype) !void {
     try writer.writeAll("\x1B8");
 }
 
-// /// A command that hides the terminal cursor.
-// ///
-// /// # Notes
-// ///
-// /// - Commands must be executed/queued for execution otherwise they do nothing.
-// #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-// pub struct Hide;
-//
-// impl Command for Hide {
-//     fn write_ansi(&self, f: &mut impl fmt::Write) -> fmt::Result {
-//         f.write_str(csi!("?25l"))
-//     }
-//
-//     #[cfg(windows)]
-//     fn execute_winapi(&self) -> std::io::Result<()> {
-//         sys::show_cursor(false)
-//     }
-// }
-//
-// /// A command that shows the terminal cursor.
-// ///
-// /// # Notes
-// ///
-// /// - Commands must be executed/queued for execution otherwise they do nothing.
-// #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-// pub struct Show;
-//
-// impl Command for Show {
-//     fn write_ansi(&self, f: &mut impl fmt::Write) -> fmt::Result {
-//         f.write_str(csi!("?25h"))
-//     }
-//
-//     #[cfg(windows)]
-//     fn execute_winapi(&self) -> std::io::Result<()> {
-//         sys::show_cursor(true)
-//     }
-// }
+pub fn cursorHide(writer: anytype) !void {
+    try writer.writeAll(csi("?25l"));
+}
 
-// /// A command that enables blinking of the terminal cursor.
-// ///
-// /// # Notes
-// ///
-// /// - Some Unix terminals (ex: GNOME and Konsole) as well as Windows versions lower than Windows 10 do not support this functionality.
-// ///   Use `SetCursorStyle` for better cross-compatibility.
-// /// - Commands must be executed/queued for execution otherwise they do nothing.
-// #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-// pub struct EnableBlinking;
-// impl Command for EnableBlinking {
-//     fn write_ansi(&self, f: &mut impl fmt::Write) -> fmt::Result {
-//         f.write_str(csi!("?12h"))
-//     }
-//     #[cfg(windows)]
-//     fn execute_winapi(&self) -> std::io::Result<()> {
-//         Ok(())
-//     }
-// }
+pub fn cursorShow(writer: anytype) !void {
+    try writer.writeAll(csi("?25h"));
+}
 
-// /// A command that disables blinking of the terminal cursor.
-// ///
-// /// # Notes
-// ///
-// /// - Some Unix terminals (ex: GNOME and Konsole) as well as Windows versions lower than Windows 10 do not support this functionality.
-// ///   Use `SetCursorStyle` for better cross-compatibility.
-// /// - Commands must be executed/queued for execution otherwise they do nothing.
-// #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-// pub struct DisableBlinking;
-// impl Command for DisableBlinking {
-//     fn write_ansi(&self, f: &mut impl fmt::Write) -> fmt::Result {
-//         f.write_str(csi!("?12l"))
-//     }
-//     #[cfg(windows)]
-//     fn execute_winapi(&self) -> std::io::Result<()> {
-//         Ok(())
-//     }
-// }
+/// Enables Cursor Blinking
+pub fn cursorBlinkEnable(writer: anytype) !void {
+    try writer.writeAll(csi("?12h"));
+}
+
+/// Enables Cursor Blinking
+pub fn cursorBlinkDisable(writer: anytype) !void {
+    try writer.writeAll(csi("?12l"));
+}
 
 // /// A command that sets the style of the cursor.
 // /// It uses two types of escape codes, one to control blinking, and the other the shape.

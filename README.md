@@ -5,3 +5,4 @@ A slim rewrite of less.
 - [ ] Non Ascii Characters
 - [ ] Searching
 - [ ] Repeating #s
+- [ ] Use terminal scrolling for rendering?

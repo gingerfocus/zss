@@ -52,39 +52,37 @@ pub fn main() !void {
 
     try terminal.enterAlternateScreen(intty);
     defer terminal.leaveAlternateScreen(intty) catch {};
-    try mainLoop(lines.items, x, y, intty);
+
+    const window = Window{ .x = x, .y = y, .lines = lines.items };
+    var state = State{ .tty = intty, .a = a };
+    try mainLoop(window, &state);
 
     // -- Cleanup --
 }
 
-fn mainLoop(lines: []const []const u8, x: u16, y: u16, screen: std.fs.File) !void {
-    var position: usize = 0;
-    _ = &position;
-
+fn mainLoop(window: Window, state: *State) !void {
     var rerender = true;
-    const end = lines.len - y;
+    const end = window.lines.len - window.y;
     while (true) {
-        if (rerender) {
-            try render(lines[position..], x, y, screen.writer());
-        }
+        if (rerender) try render(&window, state);
 
         var byte: [1]u8 = undefined;
-        if (try screen.read(&byte) == 0) break;
+        if (try state.tty.read(&byte) == 0) break;
 
         rerender = true;
 
         switch (byte[0]) {
             'q' => break,
-            'j', ' ' => rerender = scrollDown(&position, 1, end),
-            'k' => rerender = scrollUp(&position, 1),
-            'g' => position = 0,
-            'G' => position = end,
+            'j', ' ' => rerender = scrollDown(&state.position, 1, end),
+            'k' => rerender = scrollUp(&state.position, 1),
+            'g' => state.position = 0,
+            'G' => state.position = end,
             // ctrl-c
             3 => break,
             // ctrl-d
-            4 => rerender = scrollDown(&position, 20, end),
+            4 => rerender = scrollDown(&state.position, 20, end),
             // ctrl-u
-            21 => rerender = scrollUp(&position, 20),
+            21 => rerender = scrollUp(&state.position, 20),
             else => rerender = false,
         }
     }
@@ -106,26 +104,40 @@ fn scrollUp(position: *usize, amount: usize) bool {
     return true;
 }
 
-fn render(lines: []const []const u8, x: u16, y: u16, writer: anytype) !void {
+const State = struct {
+    tty: std.fs.File,
+    position: usize = 0,
+    search: ?[]const u8 = null,
+    a: std.mem.Allocator,
+};
+
+const Window = struct {
+    x: u16,
+    y: u16,
+    lines: []const []const u8,
+};
+
+fn render(window: *const Window, state: *State) !void {
+    var writer = state.tty.writer();
+
     try terminal.moveTo(writer, 0, 0);
     try terminal.clear(writer, .All);
 
-    for (0..y - 1) |i| {
-        if (i >= lines.len) {
+    for (0..window.y - 1) |ln| {
+        const i = ln + state.position;
+        if (i >= window.lines.len) {
             try writer.writeAll("~");
             try terminal.nextLine(writer, 1);
             continue;
         }
+        const line = window.lines[i];
 
-        const line = lines[i];
+        // trim the line with no wrapping
+        const bytes = if (line.len < window.x) line else line[0 .. window.x - 1];
 
-        if (line.len < x) {
-            try writer.writeAll(line);
-            try terminal.nextLine(writer, 1);
-        } else {
-            try writer.writeAll(line[0 .. x - 1]);
-            try terminal.nextLine(writer, 1);
-        }
+        // TODO: use the state to highlight the search terms
+        try writer.writeAll(bytes);
+        try terminal.nextLine(writer, 1);
     }
     try writer.writeAll(":");
 }
