@@ -1,21 +1,32 @@
 const std = @import("std");
 
-const ModeReturnHandle = struct { fd: std.posix.fd_t, termios: std.posix.termios };
+pub const ModeReturnHandle = struct { fd: std.posix.fd_t, termios: std.posix.termios };
 
-pub fn enableRawMode(stream: std.fs.File) !ModeReturnHandle {
-    // get the mode prior to switching so we can revert to it
-    var termios = try std.posix.tcgetattr(stream.handle);
-    const old_mode = termios;
+pub const Terminal = struct {
+    f: std.fs.File,
 
-    makeRaw(&termios);
-    try std.posix.tcsetattr(stream.handle, .NOW, termios);
+    oldtermios: ?std.posix.termios = null,
 
-    return .{ .fd = stream.handle, .termios = old_mode };
-}
+    pub fn enableRawMode(t: *Terminal) !void {
+        if (t.oldtermios != null) return;
 
-pub fn disableRawMode(mode: ModeReturnHandle) !void {
-    try std.posix.tcsetattr(mode.fd, .NOW, mode.termios);
-}
+        // get the mode prior to switching so we can revert to it
+        var termios = try std.posix.tcgetattr(t.f.handle);
+        const oldmode = termios;
+
+        makeRaw(&termios);
+        try std.posix.tcsetattr(t.f.handle, .NOW, termios);
+
+        t.oldtermios = oldmode;
+    }
+
+    pub fn disableRawMode(t: *Terminal) !void {
+        if (t.oldtermios) |termios| {
+            try std.posix.tcsetattr(t.f.handle, .NOW, termios);
+            t.oldtermios = null;
+        }
+    }
+};
 
 // Adapted from musl-libc
 fn makeRaw(t: *std.posix.termios) void {
@@ -41,6 +52,15 @@ fn makeRaw(t: *std.posix.termios) void {
 
     t.cc[@as(usize, @intFromEnum(std.posix.V.MIN))] = 1;
     t.cc[@as(usize, @intFromEnum(std.posix.V.TIME))] = 0;
+}
+
+pub fn getWindowSize(fd: std.posix.fd_t) !struct { u16, u16 } {
+    var win = std.mem.zeroes(std.c.winsize);
+
+    if (std.posix.system.ioctl(fd, std.posix.T.IOCGWINSZ, @intFromPtr(&win)) != 0) {
+        return error.bad_ioctl;
+    }
+    return .{ win.ws_col, win.ws_row };
 }
 
 fn csi(comptime expr: []const u8) []const u8 {
@@ -137,49 +157,34 @@ pub fn cursorBlinkDisable(writer: anytype) !void {
     try writer.writeAll(csi("?12l"));
 }
 
-// /// A command that sets the style of the cursor.
-// /// It uses two types of escape codes, one to control blinking, and the other the shape.
-// ///
-// /// # Note
-// ///
-// /// - Commands must be executed/queued for execution otherwise they do nothing.
-// #[derive(Clone, Copy)]
-// pub enum SetCursorStyle {
-//     /// Default cursor shape configured by the user.
-//     DefaultUserShape,
-//     /// A blinking block cursor shape (■).
-//     BlinkingBlock,
-//     /// A non blinking block cursor shape (inverse of `BlinkingBlock`).
-//     SteadyBlock,
-//     /// A blinking underscore cursor shape(_).
-//     BlinkingUnderScore,
-//     /// A non blinking underscore cursor shape (inverse of `BlinkingUnderScore`).
-//     SteadyUnderScore,
-//     /// A blinking cursor bar shape (|)
-//     BlinkingBar,
-//     /// A steady cursor bar shape (inverse of `BlinkingBar`).
-//     SteadyBar,
-// }
-//
-// impl Command for SetCursorStyle {
-//     fn write_ansi(&self, f: &mut impl fmt::Write) -> fmt::Result {
-//         match self {
-//             SetCursorStyle::DefaultUserShape => f.write_str("\x1b[0 q"),
-//             SetCursorStyle::BlinkingBlock => f.write_str("\x1b[1 q"),
-//             SetCursorStyle::SteadyBlock => f.write_str("\x1b[2 q"),
-//             SetCursorStyle::BlinkingUnderScore => f.write_str("\x1b[3 q"),
-//             SetCursorStyle::SteadyUnderScore => f.write_str("\x1b[4 q"),
-//             SetCursorStyle::BlinkingBar => f.write_str("\x1b[5 q"),
-//             SetCursorStyle::SteadyBar => f.write_str("\x1b[6 q"),
-//         }
-//     }
-//
-//     #[cfg(windows)]
-//     fn execute_winapi(&self) -> std::io::Result<()> {
-//         Ok(())
-//     }
-// }
-//
+pub const CursorStyle = enum {
+    /// Default cursor shape configured by the user.
+    DefaultUserShape,
+    /// A blinking block cursor shape (■).
+    BlinkingBlock,
+    /// A non blinking block cursor shape (inverse of `BlinkingBlock`).
+    SteadyBlock,
+    /// A blinking underscore cursor shape(_).
+    BlinkingUnderScore,
+    /// A non blinking underscore cursor shape (inverse of `BlinkingUnderScore`).
+    SteadyUnderScore,
+    /// A blinking cursor bar shape (|)
+    BlinkingBar,
+    /// A steady cursor bar shape (inverse of `BlinkingBar`).
+    SteadyBar,
+};
+
+pub fn setCursorStyle(writer: anytype, style: CursorStyle) !void {
+    try writer.writeAll(switch (style) {
+        .DefaultUserShape => csi("0 q"),
+        .BlinkingBlock => csi("1 q"),
+        .SteadyBlock => csi("2 q"),
+        .BlinkingUnderScore => csi("3 q"),
+        .SteadyUnderScore => csi("4 q"),
+        .BlinkingBar => csi("5 q"),
+        .SteadyBar => csi("6 q"),
+    });
+}
 
 pub fn enterAlternateScreen(writer: anytype) !void {
     try writer.writeAll(csi("?1049h"));
