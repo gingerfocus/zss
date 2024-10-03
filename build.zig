@@ -15,6 +15,9 @@ pub fn build(b: *std.Build) void {
     });
     b.installArtifact(exe);
 
+    const thermit = b.dependency("thermit", .{ .target = target, .optimize = optimize });
+    exe.root_module.addImport("thermit", thermit.module("thermit"));
+
     const zss = b.addRunArtifact(exe);
     zss.step.dependOn(b.getInstallStep());
     if (b.args) |args| zss.addArgs(args);

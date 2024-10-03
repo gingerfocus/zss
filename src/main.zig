@@ -1,5 +1,5 @@
 const std = @import("std");
-const terminal = @import("terminal.zig");
+const terminal = @import("thermit");
 
 // when reading from files, what size chunck size should be used?
 const BUFFER_SIZE = 2048;
@@ -61,7 +61,7 @@ const State = struct {
             while (iter.next()) |line| try buffer.append(line);
             break :blk buffer.toOwnedSlice();
         };
-        var tty = terminal.Terminal{ .f = o };
+        var tty = try terminal.Terminal.init(o);
 
         try tty.enableRawMode();
         try terminal.enterAlternateScreen(tty.f);
@@ -75,8 +75,10 @@ const State = struct {
 
         if (state.search) |search| search.deinit(state.a);
 
-        state.tty.disableRawMode() catch {};
         terminal.leaveAlternateScreen(state.tty.f.writer()) catch {};
+        state.tty.disableRawMode() catch {};
+
+        state.tty.deinit();
     }
 };
 
@@ -89,6 +91,7 @@ pub fn main() !void {
         if (std.mem.eql(u8, file, "-")) break :blk std.posix.STDIN_FILENO;
         break :blk try std.posix.open(file, .{}, 0);
     } };
+    defer if (f.handle != std.posix.STDIN_FILENO) std.posix.close(f.handle);
 
     const tty = std.fs.File{ .handle = try std.posix.open("/dev/tty", .{ .ACCMODE = .RDWR }, 0) };
     defer tty.close();
@@ -98,7 +101,7 @@ pub fn main() !void {
     if (tty.isTty() == false) return try forwardFile(f, tty);
 
     var gpa = std.heap.GeneralPurposeAllocator(.{ .safety = true }){};
-    defer if (gpa.deinit() == .leak) std.log.err("Memory Leaked!", .{});
+    defer _ = gpa.deinit();
     const a = gpa.allocator();
 
     const buffer = try readFile(f, a);
@@ -122,7 +125,8 @@ fn ctrl(comptime c: u8) u8 {
 }
 
 fn mainLoop(state: *State) !void {
-    const end = state.lines.len - state.y;
+    // std.debug.print("{} - {}", .{ state.lines.len, state.y });
+    const end = if (state.y > state.lines.len) 0 else state.lines.len - state.y;
     while (true) {
         try render(state);
 
@@ -131,9 +135,11 @@ fn mainLoop(state: *State) !void {
         if (readsize == 0) return error.EEOF;
         const b = bytes[0..readsize];
 
+        // state.tty.read(1000);
+
         switch (b[0]) {
             'q' => break,
-            'j', ' ', '\r' => {
+            'j', ' ', '\r', '\n' => {
                 scrollDown(&state.position, state.repeat orelse 1, end);
                 state.repeat = null;
             },
@@ -167,7 +173,7 @@ fn mainLoop(state: *State) !void {
                 scrollUp(&state.position, (state.repeat orelse 1) * 20);
                 state.repeat = null;
             },
-            '1', '2', '3', '4', '5', '6', '7', '8', '9', '0' => {
+            '0'...'9' => {
                 const v = b[0] - '0';
                 if (state.repeat) |*repeat| {
                     repeat.* *= 10;
@@ -215,7 +221,11 @@ fn searchRoutine(state: *State) !bool {
         //
 
         if (c[0] == '\x7F') {
-            _ = termbuilder.pop();
+            if (termbuilder.items.len != 0) {
+                _ = termbuilder.pop();
+                try terminal.moveLeft(state.tty.f.writer(), 1);
+                try terminal.clear(state.tty.f.writer(), .UntilNewLine);
+            }
             continue;
         }
 
@@ -344,5 +354,7 @@ fn render(state: *State) !void {
     try writer.writeAll(":");
 
     try state.tty.f.writeAll(screenbuffer.items);
-    // TODO: flush file
+
+    // flush file
+    try std.posix.syncfs(state.tty.f.handle);
 }
