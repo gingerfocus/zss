@@ -1,11 +1,16 @@
 const std = @import("std");
 
-// Although this function looks imperative, note that its job is to
-// declaratively construct a build graph that will be executed by an external
-// runner.
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+
+    const lib = b.addModule("lib", .{
+        .root_source_file = b.path("src/lib.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const thermit = b.dependency("thermit", .{ .target = target, .optimize = optimize });
+    lib.addImport("thermit", thermit.module("thermit"));
 
     const exe = b.addExecutable(.{
         .name = "zss",
@@ -14,9 +19,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     b.installArtifact(exe);
-
-    const thermit = b.dependency("thermit", .{ .target = target, .optimize = optimize });
-    exe.root_module.addImport("thermit", thermit.module("thermit"));
+    exe.root_module.addImport("lib", lib);
 
     const zss = b.addRunArtifact(exe);
     zss.step.dependOn(b.getInstallStep());
